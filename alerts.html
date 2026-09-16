@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AquaIntel - Alerts</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="/static/auth-check.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; background: #0d1b2a; color: #e0e6ed; }
+    header { background: #12233b; padding: 0 40px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f3a5f; }
+    header .title { padding: 18px 0; }
+    header h1 { margin: 0; font-size: 22px; color: #4fc3f7; }
+    header p { margin: 4px 0 0; color: #7a92ab; font-size: 13px; }
+    nav { display: flex; gap: 10px; align-items: center; }
+    nav span { color: #b0c4de; cursor: pointer; font-size: 14px; padding: 9px 16px; border-radius: 6px; user-select: none; }
+    nav span.active { background: #4fc3f7; color: #0d1b2a; font-weight: 600; }
+    nav span:hover:not(.active) { background: #1f3a5f; }
+    nav button { background: #e74c3c; color: white; border: none; padding: 9px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+
+    .container { padding: 30px 40px; }
+    .section { margin-bottom: 30px; }
+    .section h2 { color: #4fc3f7; font-size: 18px; border-bottom: 2px solid #1f3a5f; padding-bottom: 8px; }
+
+    .viewer-badge { background: #1f3a5f; color: #7a92ab; padding: 10px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; display: none; }
+
+    .form-box { background: #12233b; border: 1px solid #1f3a5f; padding: 20px; border-radius: 12px; margin-bottom: 15px; display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+    .form-box div { display: flex; flex-direction: column; }
+    .form-box label { font-size: 12px; color: #7a92ab; margin-bottom: 4px; }
+    .form-box input { padding: 8px; border: 1px solid #1f3a5f; border-radius: 6px; width: 140px; background: #0d1b2a; color: #e0e6ed; }
+    .form-box button { background: #4fc3f7; color: #0d1b2a; border: none; padding: 9px 18px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+
+    table { border-collapse: collapse; width: 100%; background: #12233b; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 10px 14px; text-align: left; font-size: 14px; border-bottom: 1px solid #1f3a5f; }
+    th { background: #1f3a5f; color: #4fc3f7; }
+    .alert-msg { color: #e74c3c; font-weight: 600; }
+    .empty { color: #7a92ab; font-style: italic; padding: 10px; }
+    .msg { margin-top: 10px; font-size: 13px; }
+
+    @media (max-width: 768px) {
+      header { flex-direction: column; align-items: flex-start; padding: 15px 20px; }
+      nav { flex-wrap: wrap; margin-top: 10px; }
+      .container { padding: 15px 20px; }
+      .form-box { flex-direction: column; align-items: stretch; }
+      .form-box input { width: 100%; }
+      table { font-size: 12px; }
+      th, td { padding: 6px 8px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title"><h1>💧 AquaIntel</h1><p>Alert Rules & History</p></div>
+    <nav>
+      <span onclick="goTo('/dashboard')">Dashboard</span>
+      <span onclick="goTo('/assets-page')">Assets</span>
+      <span class="active" onclick="goTo('/alerts-page')">Alerts</span>
+      <button onclick="logout()">Log Out</button>
+    </nav>
+  </header>
+
+  <div class="container">
+    <div class="viewer-badge" id="viewer-badge">👁 You're logged in as a Viewer — read-only access. Admin accounts can create alert rules.</div>
+
+    <div class="section">
+      <h2>Create Alert Rule</h2>
+      <div class="form-box" id="admin-form">
+        <div><label>Asset ID</label><input id="asset_id" type="number" placeholder="1" /></div>
+        <div><label>Reading Type</label><input id="reading_type" placeholder="pressure" /></div>
+        <div><label>Max Value</label><input id="max_value" type="number" placeholder="50" /></div>
+        <button onclick="createRule()">+ Create Rule</button>
+      </div>
+      <div class="msg" id="msg"></div>
+    </div>
+
+    <div class="section">
+      <h2>Triggered Alerts</h2>
+      <table>
+        <thead><tr><th>Asset ID</th><th>Message</th><th>Triggered At</th></tr></thead>
+        <tbody id="alerts-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    requireLogin();
+    startAlertWatcher();
+
+    if (!isAdmin()) {
+      document.getElementById("admin-form").style.display = "none";
+      document.getElementById("viewer-badge").style.display = "block";
+    }
+
+    async function loadAlerts() {
+      const res = await fetch(API + "/alerts");
+      const alerts = await res.json();
+      const body = document.getElementById("alerts-body");
+      body.innerHTML = "";
+      if (alerts.length === 0) {
+        body.innerHTML = `<tr><td colspan="3" class="empty">No alerts — all systems normal</td></tr>`;
+        return;
+      }
+      alerts.forEach(a => {
+        body.innerHTML += `<tr><td>${a.asset_id}</td><td class="alert-msg">${a.message}</td><td>${a.triggered_at}</td></tr>`;
+      });
+    }
+
+    async function createRule() {
+      const asset_id = document.getElementById("asset_id").value;
+      const reading_type = document.getElementById("reading_type").value;
+      const max_value = document.getElementById("max_value").value;
+
+      if (!asset_id || !reading_type || !max_value) {
+        document.getElementById("msg").style.color = "#e74c3c";
+        document.getElementById("msg").textContent = "Please fill in all fields.";
+        return;
+      }
+
+      const res = await fetch(`${API}/alert-rules?asset_id=${asset_id}&reading_type=${encodeURIComponent(reading_type)}&max_value=${max_value}`, {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + getToken() }
+      });
+
+      if (res.ok) {
+        document.getElementById("msg").style.color = "#27ae60";
+        document.getElementById("msg").textContent = "Alert rule created!";
+      } else {
+        document.getElementById("msg").style.color = "#e74c3c";
+        document.getElementById("msg").textContent = "Failed to create rule.";
+      }
+    }
+
+    loadAlerts();
+    setInterval(loadAlerts, 5000);
+  </script>
+</body>
+</html>

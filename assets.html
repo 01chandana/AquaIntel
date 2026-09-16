@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AquaIntel - Assets</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="/static/auth-check.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; background: #0d1b2a; color: #e0e6ed; }
+    header { background: #12233b; padding: 0 40px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f3a5f; }
+    header .title { padding: 18px 0; }
+    header h1 { margin: 0; font-size: 22px; color: #4fc3f7; }
+    header p { margin: 4px 0 0; color: #7a92ab; font-size: 13px; }
+    nav { display: flex; gap: 10px; align-items: center; }
+    nav span { color: #b0c4de; cursor: pointer; font-size: 14px; padding: 9px 16px; border-radius: 6px; user-select: none; }
+    nav span.active { background: #4fc3f7; color: #0d1b2a; font-weight: 600; }
+    nav span:hover:not(.active) { background: #1f3a5f; }
+    nav button { background: #e74c3c; color: white; border: none; padding: 9px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+
+    .container { padding: 30px 40px; }
+    .form-box { background: #12233b; border: 1px solid #1f3a5f; padding: 20px; border-radius: 12px; margin-bottom: 20px; display: flex; gap: 12px; align-items: flex-end; }
+    .form-box div { display: flex; flex-direction: column; }
+    .form-box label { font-size: 12px; color: #7a92ab; margin-bottom: 4px; }
+    .form-box input, .form-box select { padding: 8px; border: 1px solid #1f3a5f; border-radius: 6px; background: #0d1b2a; color: #e0e6ed; }
+    .form-box button { background: #4fc3f7; color: #0d1b2a; border: none; padding: 9px 18px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+
+    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .toolbar input { padding: 9px 12px; border: 1px solid #1f3a5f; border-radius: 6px; background: #12233b; color: #e0e6ed; width: 240px; }
+    .toolbar button { background: #12233b; border: 1px solid #1f3a5f; color: #e0e6ed; padding: 8px 14px; border-radius: 6px; cursor: pointer; }
+
+    .viewer-badge { background: #1f3a5f; color: #7a92ab; padding: 10px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; display: none; }
+
+    table { border-collapse: collapse; width: 100%; background: #12233b; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 10px 14px; text-align: left; font-size: 14px; border-bottom: 1px solid #1f3a5f; }
+    th { background: #1f3a5f; color: #4fc3f7; }
+    tr[data-row]:hover { background: #16324f; }
+    .status-active { color: #27ae60; font-weight: 600; }
+    .status-maintenance { color: #e67e22; font-weight: 600; }
+    .msg { margin-top: 10px; font-size: 13px; }
+
+    @media (max-width: 768px) {
+      header { flex-direction: column; align-items: flex-start; padding: 15px 20px; }
+      nav { flex-wrap: wrap; margin-top: 10px; }
+      .container { padding: 15px 20px; }
+      .form-box { flex-direction: column; align-items: stretch; }
+      .toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
+      .toolbar input { width: 100%; }
+      table { font-size: 12px; }
+      th, td { padding: 6px 8px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title"><h1>💧 AquaIntel</h1><p>Assets Management</p></div>
+    <nav>
+      <span onclick="goTo('/dashboard')">Dashboard</span>
+      <span class="active" onclick="goTo('/assets-page')">Assets</span>
+      <span onclick="goTo('/alerts-page')">Alerts</span>
+      <button onclick="logout()">Log Out</button>
+    </nav>
+  </header>
+
+  <div class="container">
+    <div class="viewer-badge" id="viewer-badge">👁 You're logged in as a Viewer — read-only access. Admin accounts can add/edit assets.</div>
+
+    <div class="form-box" id="admin-form">
+      <div><label>Asset Name</label><input id="name" placeholder="e.g. Pump Station C" /></div>
+      <div>
+        <label>Status</label>
+        <select id="status">
+          <option value="active">active</option>
+          <option value="maintenance">maintenance</option>
+        </select>
+      </div>
+      <button onclick="createAsset()">+ Add Asset</button>
+    </div>
+    <div class="msg" id="msg"></div>
+
+    <div class="toolbar">
+      <input id="search" placeholder="🔍 Search by name or status..." oninput="renderTable()" />
+      <button onclick="exportCSV()">⬇ Export CSV</button>
+    </div>
+
+    <table>
+      <thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody id="assets-body"></tbody>
+    </table>
+  </div>
+
+  <script>
+    requireLogin();
+    startAlertWatcher();
+
+    if (!isAdmin()) {
+      document.getElementById("admin-form").style.display = "none";
+      document.getElementById("viewer-badge").style.display = "block";
+    }
+
+    let currentAssets = [];
+
+    async function loadAssets() {
+      const res = await fetch(API + "/assets");
+      currentAssets = await res.json();
+      renderTable();
+    }
+
+    function renderTable() {
+      const query = document.getElementById("search").value.toLowerCase();
+      const filtered = currentAssets.filter(a =>
+        a.name.toLowerCase().includes(query) || a.status.toLowerCase().includes(query)
+      );
+
+      const body = document.getElementById("assets-body");
+      body.innerHTML = "";
+
+      if (filtered.length === 0) {
+        body.innerHTML = `<tr><td colspan="4" style="color:#7a92ab; font-style:italic;">No matching assets</td></tr>`;
+        return;
+      }
+
+      filtered.forEach(a => {
+        const cls = a.status === "active" ? "status-active" : "status-maintenance";
+        const editBtn = isAdmin()
+          ? `<button onclick="event.stopPropagation(); editAsset(${a.id}, '${a.name}', '${a.status}')" style="background:#4fc3f7;color:#0d1b2a;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;">Edit</button>`
+          : "";
+        body.innerHTML += `<tr data-row style="cursor:pointer" onclick="goTo('/asset-detail?id=${a.id}')"><td>${a.id}</td><td>${a.name}</td><td class="${cls}">${a.status}</td><td>${editBtn}</td></tr>`;
+      });
+    }
+
+    async function createAsset() {
+      const name = document.getElementById("name").value;
+      const status = document.getElementById("status").value;
+      if (!name) { document.getElementById("msg").textContent = "Please enter a name."; return; }
+
+      const res = await fetch(`${API}/assets?name=${encodeURIComponent(name)}&status=${status}`, {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + getToken() }
+      });
+
+      if (res.ok) {
+        document.getElementById("msg").style.color = "#27ae60";
+        document.getElementById("msg").textContent = "Asset added!";
+        document.getElementById("name").value = "";
+        loadAssets();
+      } else {
+        document.getElementById("msg").style.color = "#e74c3c";
+        document.getElementById("msg").textContent = "Failed to add asset (admin access required).";
+      }
+    }
+
+    async function editAsset(id, currentName, currentStatus) {
+      const newName = prompt("Edit asset name:", currentName);
+      if (newName === null) return;
+      const newStatus = prompt("Edit status (active/maintenance):", currentStatus);
+      if (newStatus === null) return;
+
+      const res = await fetch(`${API}/assets/${id}?name=${encodeURIComponent(newName)}&status=${encodeURIComponent(newStatus)}`, {
+        method: "PUT",
+        headers: { "Authorization": "Bearer " + getToken() }
+      });
+
+      if (res.ok) {
+        loadAssets();
+      } else {
+        alert("Failed to update asset (admin access required).");
+      }
+    }
+
+    function exportCSV() {
+      let csv = "ID,Name,Status\n";
+      currentAssets.forEach(a => { csv += `${a.id},${a.name},${a.status}\n`; });
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "aquaintel_assets.csv";
+      link.click();
+    }
+
+    loadAssets();
+  </script>
+</body>
+</html>
