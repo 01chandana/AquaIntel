@@ -29,6 +29,22 @@ function goTo(page) {
   window.location.href = page;
 }
 
+// ---- Theme ----
+function getTheme() {
+  return localStorage.getItem("theme") || "dark";
+}
+
+function applyTheme() {
+  const theme = getTheme();
+  document.documentElement.setAttribute("data-theme", theme);
+}
+
+function toggleTheme() {
+  const newTheme = getTheme() === "dark" ? "light" : "dark";
+  localStorage.setItem("theme", newTheme);
+  applyTheme();
+}
+
 // ---- Browser Notifications ----
 function requestNotificationPermission() {
   if ("Notification" in window && Notification.permission === "default") {

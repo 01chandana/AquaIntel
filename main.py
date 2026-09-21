@@ -6,6 +6,9 @@ from database import engine, SessionLocal, Base
 import models
 import auth
 import statistics
+import numpy as np
+from datetime import datetime, timedelta
+from sklearn.ensemble import IsolationForest
 from dependencies import get_current_user, require_admin
 
 Base.metadata.create_all(bind=engine)
@@ -97,6 +100,105 @@ def detect_anomalies(asset_id: int):
         "total_readings": len(values),
         "anomalies_found": len(anomalies),
         "anomalies": anomalies
+    }
+
+@app.get("/assets/{asset_id}/ml-anomalies")
+def ml_anomaly_detection(asset_id: int, hours: int = 24):
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+
+    db = SessionLocal()
+    readings = db.query(models.Telemetry).filter(
+        models.Telemetry.asset_id == asset_id,
+        models.Telemetry.recorded_at >= cutoff
+    ).order_by(models.Telemetry.recorded_at).all()
+    db.close()
+
+    if len(readings) < 10:
+        return {"message": "Not enough recent data yet (need at least 10 readings in the last " + str(hours) + " hours)", "anomalies": []}
+
+    values = np.array([[r.value] for r in readings])
+
+    model = IsolationForest(n_estimators=100, contamination=0.1, random_state=42)
+    model.fit(values)
+
+    predictions = model.predict(values)
+    scores = model.decision_function(values)
+
+    anomalies = []
+    for i, r in enumerate(readings):
+        if predictions[i] == -1:
+            anomalies.append({
+                "id": r.id,
+                "value": r.value,
+                "recorded_at": r.recorded_at,
+                "anomaly_score": round(float(scores[i]), 4)
+            })
+
+    return {
+        "model": "IsolationForest (scikit-learn)",
+        "total_readings": len(values),
+        "anomalies_found": len(anomalies),
+        "anomalies": anomalies
+    }
+
+@app.get("/assets/{asset_id}/predict")
+def predict_threshold_breach(asset_id: int, reading_type: str = "pressure", threshold: float = 80.0):
+    db = SessionLocal()
+    readings = db.query(models.Telemetry).filter(
+        models.Telemetry.asset_id == asset_id,
+        models.Telemetry.reading_type == reading_type
+    ).order_by(models.Telemetry.recorded_at).all()
+    db.close()
+
+    if len(readings) < 4:
+        return {"message": "Not enough data yet (need at least 4 readings)", "prediction": None}
+
+    times = [(r.recorded_at - readings[0].recorded_at).total_seconds() for r in readings]
+    values = [r.value for r in readings]
+
+    n = len(times)
+    mean_t = sum(times) / n
+    mean_v = sum(values) / n
+
+    numerator = sum((times[i] - mean_t) * (values[i] - mean_v) for i in range(n))
+    denominator = sum((times[i] - mean_t) ** 2 for i in range(n))
+
+    if denominator == 0:
+        return {"message": "Not enough variation to predict a trend", "prediction": None}
+
+    slope = numerator / denominator
+    intercept = mean_v - slope * mean_t
+
+    current_value = values[-1]
+
+    if slope <= 0:
+        return {
+            "trend": "stable_or_decreasing",
+            "current_value": current_value,
+            "threshold": threshold,
+            "message": "Value is stable or trending down — no breach predicted.",
+            "prediction": None
+        }
+
+    seconds_to_breach = (threshold - intercept) / slope - times[-1]
+
+    if seconds_to_breach < 0:
+        return {
+            "trend": "increasing",
+            "current_value": current_value,
+            "threshold": threshold,
+            "message": "Threshold already exceeded based on trend.",
+            "prediction": None
+        }
+
+    hours_to_breach = round(seconds_to_breach / 3600, 2)
+
+    return {
+        "trend": "increasing",
+        "current_value": current_value,
+        "threshold": threshold,
+        "estimated_hours_to_breach": hours_to_breach,
+        "message": f"At current trend, {reading_type} may reach {threshold} in approximately {hours_to_breach} hours."
     }
 
 @app.get("/activity")
@@ -217,65 +319,3 @@ def login(email: str, password: str):
 
     token = auth.create_access_token(user.email, user.role)
     return {"access_token": token, "token_type": "bearer", "role": user.role}
-
-@app.get("/assets/{asset_id}/predict")
-def predict_threshold_breach(asset_id: int, reading_type: str = "pressure", threshold: float = 80.0):
-    db = SessionLocal()
-    readings = db.query(models.Telemetry).filter(
-        models.Telemetry.asset_id == asset_id,
-        models.Telemetry.reading_type == reading_type
-    ).order_by(models.Telemetry.recorded_at).all()
-    db.close()
-
-    if len(readings) < 4:
-        return {"message": "Not enough data yet (need at least 4 readings)", "prediction": None}
-
-    # Convert timestamps to seconds since first reading, for simple linear regression
-    times = [(r.recorded_at - readings[0].recorded_at).total_seconds() for r in readings]
-    values = [r.value for r in readings]
-
-    n = len(times)
-    mean_t = sum(times) / n
-    mean_v = sum(values) / n
-
-    numerator = sum((times[i] - mean_t) * (values[i] - mean_v) for i in range(n))
-    denominator = sum((times[i] - mean_t) ** 2 for i in range(n))
-
-    if denominator == 0:
-        return {"message": "Not enough variation to predict a trend", "prediction": None}
-
-    slope = numerator / denominator
-    intercept = mean_v - slope * mean_t
-
-    current_value = values[-1]
-
-    if slope <= 0:
-        return {
-            "trend": "stable_or_decreasing",
-            "current_value": current_value,
-            "threshold": threshold,
-            "message": "Value is stable or trending down — no breach predicted.",
-            "prediction": None
-        }
-
-    # Solve for time when value = threshold: threshold = slope * t + intercept
-    seconds_to_breach = (threshold - intercept) / slope - times[-1]
-
-    if seconds_to_breach < 0:
-        return {
-            "trend": "increasing",
-            "current_value": current_value,
-            "threshold": threshold,
-            "message": "Threshold already exceeded based on trend.",
-            "prediction": None
-        }
-
-    hours_to_breach = round(seconds_to_breach / 3600, 2)
-
-    return {
-        "trend": "increasing",
-        "current_value": current_value,
-        "threshold": threshold,
-        "estimated_hours_to_breach": hours_to_breach,
-        "message": f"At current trend, {reading_type} may reach {threshold} in approximately {hours_to_breach} hours."
-    }

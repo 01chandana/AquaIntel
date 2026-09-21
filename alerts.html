@@ -7,6 +7,14 @@
   <style>
     * { box-sizing: border-box; }
     body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; background: #0d1b2a; color: #e0e6ed; }
+
+    :root[data-theme="light"] body { background: #f4f7fa; color: #1a1a1a; }
+    :root[data-theme="light"] header { background: #ffffff; border-bottom: 1px solid #d5e2ec; }
+    :root[data-theme="light"] .form-box, :root[data-theme="light"] table { background: #ffffff; border-color: #d5e2ec; }
+    :root[data-theme="light"] th { background: #eef2f6; color: #12395b; }
+    :root[data-theme="light"] nav span { color: #444; }
+    :root[data-theme="light"] input { background: #ffffff; color: #1a1a1a; }
+
     header { background: #12233b; padding: 0 40px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f3a5f; }
     header .title { padding: 18px 0; }
     header h1 { margin: 0; font-size: 22px; color: #4fc3f7; }
@@ -54,6 +62,7 @@
       <span onclick="goTo('/dashboard')">Dashboard</span>
       <span onclick="goTo('/assets-page')">Assets</span>
       <span class="active" onclick="goTo('/alerts-page')">Alerts</span>
+      <span onclick="toggleTheme()">🌓 Theme</span>
       <button onclick="logout()">Log Out</button>
     </nav>
   </header>
@@ -83,6 +92,7 @@
 
   <script>
     requireLogin();
+    applyTheme();
     startAlertWatcher();
 
     if (!isAdmin()) {

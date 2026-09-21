@@ -27,8 +27,13 @@ and forecasts future threshold breaches for predictive maintenance.
 - Alert history view
 
 **Analytics**
-- **Anomaly detection** — flags readings more than 2 standard deviations from
-  the mean (z-score method); anomalous points are highlighted on the chart
+- **Statistical anomaly detection** — flags readings more than 2 standard
+  deviations from the mean (z-score method); anomalous points are highlighted
+  on the chart
+- **ML anomaly detection** — trains a scikit-learn `IsolationForest` on each
+  asset's readings from the last 24 hours and flags points the model scores as
+  outliers, with the model's own anomaly score reported per point; an inline
+  explanation on the page describes how to read the score
 - **Predictive maintenance** — fits a linear regression over a sensor's history
   and estimates how many hours until the value is projected to cross a given
   threshold
@@ -41,9 +46,11 @@ and forecasts future threshold breaches for predictive maintenance.
   controls are hidden for viewers
 
 **Interface**
-- Multi-page dark-themed dashboard (Dashboard / Assets / Alerts / Asset Detail)
+- Multi-page dashboard (Dashboard / Assets / Alerts / Asset Detail) with
+  dark/light theme toggle
 - Live-updating summary cards, charts, and recent activity feed
-- Mobile responsive — usable on a phone browser
+- Mobile responsive — tested on a real Android phone over the local network
+- One-click PDF export of an asset's detail report (browser print-to-PDF)
 
 ---
 
@@ -53,6 +60,7 @@ and forecasts future threshold breaches for predictive maintenance.
 |---|---|
 | Backend | Python, FastAPI, Uvicorn |
 | Database | SQLite via SQLAlchemy ORM |
+| Machine learning | scikit-learn (`IsolationForest`), NumPy |
 | Auth | JWT (python-jose), bcrypt password hashing |
 | Frontend | HTML, CSS, vanilla JavaScript |
 | Charts | Chart.js |
@@ -124,7 +132,8 @@ log in with those credentials.
 | POST | `/assets` | admin | Create an asset |
 | PUT | `/assets/{id}` | admin | Update asset name/status |
 | GET | `/assets/{id}` | — | Asset details plus its readings |
-| GET | `/assets/{id}/anomalies` | — | Statistical anomaly report |
+| GET | `/assets/{id}/anomalies` | — | Statistical anomaly report (z-score) |
+| GET | `/assets/{id}/ml-anomalies` | — | ML anomaly report (Isolation Forest, last 24h, `hours` param overrides) |
 | GET | `/assets/{id}/predict` | — | Forecast hours until threshold breach |
 | POST | `/telemetry` | — | Ingest a sensor reading (evaluates alert rules) |
 | GET | `/telemetry` | — | List all readings |
@@ -136,10 +145,23 @@ log in with those credentials.
 
 ## How the analytics work
 
-**Anomaly detection.** For a given asset, the mean and sample standard deviation
-of all its readings are computed. Any reading whose distance from the mean
-exceeds 2σ is reported as an anomaly, along with its deviation in units of σ.
-At least 3 readings are required before any result is returned.
+**Statistical anomaly detection.** For a given asset, the mean and sample
+standard deviation of all its readings are computed. Any reading whose distance
+from the mean exceeds 2σ is reported as an anomaly, along with its deviation in
+units of σ. At least 3 readings are required before any result is returned.
+
+**ML anomaly detection.** A `scikit-learn` `IsolationForest` (100 trees,
+`contamination=0.1`) is trained on each asset's readings from the last 24 hours
+(configurable via a `hours` query parameter) on request. Isolation Forest
+isolates points by randomly partitioning the feature space; anomalies require
+fewer partitions to isolate than normal points, so they get a lower (more
+negative) score from the model's `decision_function`. Points the model labels
+`-1` are reported as anomalies along with that score. At least 10 readings in
+the window are required, and the model is retrained fresh on every request
+against that asset's current history rather than persisted — appropriate for
+this data volume, though a production system would train and version the model
+offline instead. The Asset Detail page includes an inline explanation of the
+score for anyone reviewing the UI.
 
 **Breach prediction.** Readings are converted to (seconds-elapsed, value) pairs
 and a least-squares linear regression is fitted. If the resulting slope is
@@ -148,8 +170,10 @@ threshold, and the remaining time is reported in hours. If the slope is zero or
 negative, the endpoint reports a stable or decreasing trend and makes no
 prediction. At least 4 readings are required.
 
-Both are deliberately simple, explainable statistical methods rather than trained
-models — appropriate for the data volumes involved and easy to reason about.
+The z-score and regression methods are deliberately simple, explainable
+statistics — easy to reason about and cheap to compute on every request. The
+Isolation Forest is a genuine trained ML model, included alongside them so the
+two approaches can be compared directly on the same data from the same UI.
 
 ---
 
@@ -163,6 +187,10 @@ models — appropriate for the data volumes involved and easy to reason about.
   variable before any real deployment
 - CORS is fully open (`allow_origins=["*"]`), suitable for local development only
 - Browser notifications require the tab to be open
+- PDF export relies on the browser's print dialog rather than a generated
+  file, so formatting depends on the browser's print rendering
+- The ML model is trained on demand per request rather than cached, so
+  response time grows with the size of the reading window
 
 ---
 

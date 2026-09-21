@@ -8,6 +8,13 @@
   <style>
     * { box-sizing: border-box; }
     body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; background: #0d1b2a; color: #e0e6ed; }
+
+    :root[data-theme="light"] body { background: #f4f7fa; color: #1a1a1a; }
+    :root[data-theme="light"] header { background: #ffffff; border-bottom: 1px solid #d5e2ec; }
+    :root[data-theme="light"] .card, :root[data-theme="light"] .chart-box, :root[data-theme="light"] table { background: #ffffff; border-color: #d5e2ec; }
+    :root[data-theme="light"] th { background: #eef2f6; color: #12395b; }
+    :root[data-theme="light"] nav span { color: #444; }
+
     header { background: #12233b; padding: 0 40px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f3a5f; }
     header .title { padding: 18px 0; }
     header h1 { margin: 0; font-size: 22px; color: #4fc3f7; }
@@ -28,6 +35,7 @@
     .chart-box { background: #12233b; border: 1px solid #1f3a5f; border-radius: 12px; padding: 20px; margin-bottom: 25px; }
     .chart-box h3 { margin: 0 0 15px; color: #4fc3f7; font-size: 15px; }
 
+    .section { margin-bottom: 30px; }
     .section h2 { color: #4fc3f7; font-size: 18px; border-bottom: 2px solid #1f3a5f; padding-bottom: 8px; }
     table { border-collapse: collapse; width: 100%; background: #12233b; border-radius: 8px; overflow: hidden; }
     th, td { padding: 10px 14px; text-align: left; font-size: 14px; border-bottom: 1px solid #1f3a5f; }
@@ -43,6 +51,12 @@
       table { font-size: 12px; }
       th, td { padding: 6px 8px; }
     }
+
+    @media print {
+      header, nav, .back-link, #export-btn { display: none !important; }
+      body { background: white; color: black; }
+      .card, .chart-box, table { border: 1px solid #ccc; background: white; }
+    }
   </style>
 </head>
 <body>
@@ -52,13 +66,15 @@
       <span onclick="goTo('/dashboard')">Dashboard</span>
       <span onclick="goTo('/assets-page')">Assets</span>
       <span onclick="goTo('/alerts-page')">Alerts</span>
+      <span onclick="toggleTheme()">🌓 Theme</span>
       <button onclick="logout()">Log Out</button>
     </nav>
   </header>
 
   <div class="container">
     <span class="back-link" onclick="goTo('/assets-page')">← Back to Assets</span>
-    <h2 id="asset-name" style="color:#4fc3f7;">Loading...</h2>
+    <button id="export-btn" onclick="window.print()" style="float:right; background:#4fc3f7; color:#0d1b2a; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-weight:600;">🖨️ Export as PDF</button>
+    <h2 id="asset-name" style="color:#4fc3f7; clear:both;">Loading...</h2>
 
     <div class="summary">
       <div class="card"><h2 id="reading-count">0</h2><p>Total Readings</p></div>
@@ -78,16 +94,31 @@
     </div>
 
     <div class="section">
-      <h2>Detected Anomalies</h2>
+      <h2>Detected Anomalies (Statistical, z-score)</h2>
       <table>
         <thead><tr><th>Value</th><th>Time</th><th>Deviation (σ)</th></tr></thead>
         <tbody id="anomaly-body"></tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>🤖 ML Anomaly Detection (Isolation Forest)</h2>
+      <div style="background:#12233b; border:1px solid #1f3a5f; border-radius:8px; padding:14px 18px; margin-bottom:15px; font-size:13px; color:#7a92ab; line-height:1.5;">
+        A scikit-learn <b style="color:#4fc3f7;">Isolation Forest</b> model is trained on this asset's last 24 hours of
+        readings. It scores each value by how easily it can be separated from the rest of the data — values that stand
+        out get isolated in fewer splits and receive a <b>more negative score</b>. Only points the model flags as
+        outliers are listed below.
+      </div>
+      <table>
+        <thead><tr><th>Value</th><th>Time</th><th>Anomaly Score</th></tr></thead>
+        <tbody id="ml-anomaly-body"></tbody>
       </table>
     </div>
   </div>
 
   <script>
     requireLogin();
+    applyTheme();
     startAlertWatcher();
 
     const params = new URLSearchParams(window.location.search);
@@ -169,10 +200,28 @@
       }
     }
 
+    async function loadMLAnomalies() {
+      const res = await fetch(`${API}/assets/${assetId}/ml-anomalies`);
+      const data = await res.json();
+      const body = document.getElementById("ml-anomaly-body");
+      body.innerHTML = "";
+
+      if (!data.anomalies || data.anomalies.length === 0) {
+        body.innerHTML = `<tr><td colspan="3" class="empty">${data.message || "No anomalies detected by ML model"}</td></tr>`;
+        return;
+      }
+
+      data.anomalies.forEach(a => {
+        body.innerHTML += `<tr class="anomaly-row"><td>${a.value}</td><td>${new Date(a.recorded_at).toLocaleString()}</td><td>${a.anomaly_score}</td></tr>`;
+      });
+    }
+
     loadDetail();
     loadPrediction();
+    loadMLAnomalies();
     setInterval(loadDetail, 6000);
     setInterval(loadPrediction, 6000);
+    setInterval(loadMLAnomalies, 6000);
   </script>
 </body>
 </html>
