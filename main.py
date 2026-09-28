@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 import re
@@ -30,14 +31,71 @@ from dependencies import get_current_user, require_admin
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
+
+# ============================================================
+# Production logging
+# ============================================================
+
+LOG_LEVEL = os.getenv("AQUAINTEL_LOG_LEVEL", "INFO").upper()
+
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
+
+logger = logging.getLogger("aquaintel")
+
+
 app = FastAPI(
     title="AquaIntel API",
     version="2.0.0",
 )
 
 
+# ============================================================
+# Request / response logging
+# ============================================================
+
+@app.middleware("http")
+async def request_logging(request: Request, call_next):
+    start_time = time.perf_counter()
+
+    try:
+        response = await call_next(request)
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        logger.info(
+            "%s %s -> %s (%.2f ms)",
+            request.method,
+            request.url.path,
+            response.status_code,
+            duration_ms,
+        )
+
+        return response
+
+    except Exception:
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        logger.exception(
+            "%s %s failed after %.2f ms",
+            request.method,
+            request.url.path,
+            duration_ms,
+        )
+
+        raise
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.warning(
+        "Validation error: %s %s",
+        request.method,
+        request.url.path,
+    )
+
     errors = []
 
     for error in exc.errors():
@@ -84,7 +142,9 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Permissions-Policy"] = (
+        "camera=(), microphone=(), geolocation=()"
+    )
 
     # Swagger UI uses assets from jsdelivr.
     response.headers["Content-Security-Policy"] = (
@@ -216,25 +276,35 @@ LOGIN_MAX_FAILURES = 5
 
 def _prune_login_attempts(now: float):
     stale = []
+
     for key, attempts in FAILED_LOGINS.items():
         while attempts and now - attempts[0] > LOGIN_WINDOW_SECONDS:
             attempts.popleft()
+
         if not attempts:
             stale.append(key)
+
     for key in stale:
         FAILED_LOGINS.pop(key, None)
 
 
 def _check_login_rate_limit(keys):
     now = time.monotonic()
+
     _prune_login_attempts(now)
+
     for key in keys:
         if len(FAILED_LOGINS[key]) >= LOGIN_MAX_FAILURES:
-            raise HTTPException(status_code=429, detail="Too many failed login attempts. Try again later.")
+            logger.warning("Login rate limit triggered")
+            raise HTTPException(
+                status_code=429,
+                detail="Too many failed login attempts. Try again later.",
+            )
 
 
 def _record_login_failure(keys):
     now = time.monotonic()
+
     for key in keys:
         FAILED_LOGINS[key].append(now)
 
@@ -419,8 +489,16 @@ def get_asset_detail(
 
         if reading_type:
             normalized_type = reading_type.strip().lower()
-            if not re.fullmatch(r"[a-z0-9_-]+", normalized_type):
-                raise HTTPException(status_code=422, detail="Invalid reading type")
+
+            if not re.fullmatch(
+                r"[a-z0-9_-]+",
+                normalized_type,
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Invalid reading type",
+                )
+
             q = q.filter(
                 models.Telemetry.reading_type == normalized_type
             )
@@ -634,8 +712,16 @@ def get_telemetry(
 
         if reading_type:
             normalized_type = reading_type.strip().lower()
-            if not re.fullmatch(r"[a-z0-9_-]+", normalized_type):
-                raise HTTPException(status_code=422, detail="Invalid reading type")
+
+            if not re.fullmatch(
+                r"[a-z0-9_-]+",
+                normalized_type,
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Invalid reading type",
+                )
+
             q = q.filter(
                 models.Telemetry.reading_type == normalized_type
             )
@@ -706,8 +792,15 @@ def detect_anomalies(
 
     try:
         reading_type = reading_type.strip().lower()
-        if not re.fullmatch(r"[a-z0-9_-]+", reading_type):
-            raise HTTPException(status_code=422, detail="Invalid reading type")
+
+        if not re.fullmatch(
+            r"[a-z0-9_-]+",
+            reading_type,
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid reading type",
+            )
 
         readings = _get_readings_for_asset(
             db,
@@ -715,7 +808,10 @@ def detect_anomalies(
             reading_type,
         )
 
-        values = [reading.value for reading in readings]
+        values = [
+            reading.value
+            for reading in readings
+        ]
 
         if len(values) < 3:
             return {
@@ -783,8 +879,15 @@ def ml_anomaly_detection(
 
     try:
         reading_type = reading_type.strip().lower()
-        if not re.fullmatch(r"[a-z0-9_-]+", reading_type):
-            raise HTTPException(status_code=422, detail="Invalid reading type")
+
+        if not re.fullmatch(
+            r"[a-z0-9_-]+",
+            reading_type,
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid reading type",
+            )
 
         asset = (
             db.query(models.Asset)
@@ -798,8 +901,9 @@ def ml_anomaly_detection(
                 detail="Asset not found",
             )
 
-        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
-            hours=hours
+        cutoff = (
+            datetime.now(timezone.utc).replace(tzinfo=None)
+            - timedelta(hours=hours)
         )
 
         readings = (
@@ -823,7 +927,10 @@ def ml_anomaly_detection(
             }
 
         values = np.array(
-            [[reading.value] for reading in readings],
+            [
+                [reading.value]
+                for reading in readings
+            ],
             dtype=float,
         )
 
@@ -897,8 +1004,15 @@ def predict_threshold_breach(
 
     try:
         reading_type = reading_type.strip().lower()
-        if not re.fullmatch(r"[a-z0-9_-]+", reading_type):
-            raise HTTPException(status_code=422, detail="Invalid reading type")
+
+        if not re.fullmatch(
+            r"[a-z0-9_-]+",
+            reading_type,
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid reading type",
+            )
 
         readings = _get_readings_for_asset(
             db,
@@ -1167,7 +1281,10 @@ def acknowledge_alert(
             )
 
         alert.acknowledged = True
-        alert.acknowledged_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        alert.acknowledged_at = (
+            datetime.now(timezone.utc)
+            .replace(tzinfo=None)
+        )
 
         db.commit()
         db.refresh(alert)
@@ -1299,6 +1416,8 @@ def signup(data: SignupRequest):
         db.commit()
         db.refresh(new_user)
 
+        logger.info("New viewer account created")
+
         return new_user
 
     finally:
@@ -1316,7 +1435,11 @@ def login(
 ):
     ip = request.client.host if request.client else "unknown"
     email = data.email.lower()
-    keys = [f"ip:{ip}", f"email:{email}"]
+
+    keys = [
+        f"ip:{ip}",
+        f"email:{email}",
+    ]
 
     _check_login_rate_limit(keys)
 
@@ -1335,6 +1458,11 @@ def login(
         ):
             _record_login_failure(keys)
 
+            logger.warning(
+                "Failed login attempt from IP %s",
+                ip,
+            )
+
             raise HTTPException(
                 status_code=401,
                 detail="Invalid email or password",
@@ -1345,6 +1473,11 @@ def login(
         token = auth.create_access_token(
             user.email,
             user.role,
+        )
+
+        logger.info(
+            "Successful login from IP %s",
+            ip,
         )
 
         return {
