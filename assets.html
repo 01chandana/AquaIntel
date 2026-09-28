@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AquaIntel - Assets</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="/static/auth-check.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; background: #0d1b2a; color: #e0e6ed; }
+
+    :root[data-theme="light"] body { background: #f4f7fa; color: #1a1a1a; }
+    :root[data-theme="light"] header { background: #ffffff; border-bottom: 1px solid #d5e2ec; }
+    :root[data-theme="light"] .form-box, :root[data-theme="light"] table { background: #ffffff; border-color: #d5e2ec; }
+    :root[data-theme="light"] th { background: #eef2f6; color: #12395b; }
+    :root[data-theme="light"] nav span { color: #444; }
+    :root[data-theme="light"] input, :root[data-theme="light"] select { background: #ffffff; color: #1a1a1a; }
+
+    header { background: #12233b; padding: 0 40px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f3a5f; }
+    header .title { padding: 18px 0; }
+    header h1 { margin: 0; font-size: 22px; color: #4fc3f7; }
+    header p { margin: 4px 0 0; color: #7a92ab; font-size: 13px; }
+    nav { display: flex; gap: 10px; align-items: center; }
+    nav span { color: #b0c4de; cursor: pointer; font-size: 14px; padding: 9px 16px; border-radius: 6px; user-select: none; }
+    nav span.active { background: #4fc3f7; color: #0d1b2a; font-weight: 600; }
+    nav span:hover:not(.active) { background: #1f3a5f; }
+    nav button { background: #e74c3c; color: white; border: none; padding: 9px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+
+    .container { padding: 30px 40px; }
+    .form-box { background: #12233b; border: 1px solid #1f3a5f; padding: 20px; border-radius: 12px; margin-bottom: 20px; display: flex; gap: 12px; align-items: flex-end; }
+    .form-box div { display: flex; flex-direction: column; }
+    .form-box label { font-size: 12px; color: #7a92ab; margin-bottom: 4px; }
+    .form-box input, .form-box select { padding: 8px; border: 1px solid #1f3a5f; border-radius: 6px; background: #0d1b2a; color: #e0e6ed; }
+    .form-box button { background: #4fc3f7; color: #0d1b2a; border: none; padding: 9px 18px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+
+    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .toolbar input { padding: 9px 12px; border: 1px solid #1f3a5f; border-radius: 6px; background: #12233b; color: #e0e6ed; width: 240px; }
+    .toolbar button { background: #12233b; border: 1px solid #1f3a5f; color: #e0e6ed; padding: 8px 14px; border-radius: 6px; cursor: pointer; }
+
+    .viewer-badge { background: #1f3a5f; color: #7a92ab; padding: 10px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; display: none; }
+
+    table { border-collapse: collapse; width: 100%; background: #12233b; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 10px 14px; text-align: left; font-size: 14px; border-bottom: 1px solid #1f3a5f; }
+    th { background: #1f3a5f; color: #4fc3f7; }
+    tr[data-row]:hover { background: #16324f; }
+    .status-active { color: #27ae60; font-weight: 600; }
+    .status-maintenance { color: #e67e22; font-weight: 600; }
+    .msg { margin-top: 10px; font-size: 13px; }
+
+    @media (max-width: 768px) {
+      header { flex-direction: column; align-items: flex-start; padding: 15px 20px; }
+      nav { flex-wrap: wrap; margin-top: 10px; }
+      .container { padding: 15px 20px; }
+      .form-box { flex-direction: column; align-items: stretch; }
+      .toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
+      .toolbar input { width: 100%; }
+      table { font-size: 12px; }
+      th, td { padding: 6px 8px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title"><h1>💧 AquaIntel</h1><p>Assets Management</p></div>
+    <nav>
+      <span onclick="goTo('/dashboard')">Dashboard</span>
+      <span class="active" onclick="goTo('/assets-page')">Assets</span>
+      <span onclick="goTo('/alerts-page')">Alerts</span>
+      <span onclick="toggleTheme()">🌓 Theme</span>
+      <button onclick="logout()">Log Out</button>
+    </nav>
+  </header>
+
+  <div class="container">
+    <div class="viewer-badge" id="viewer-badge">👁 You're logged in as a Viewer — read-only access. Admin accounts can add/edit assets.</div>
+
+    <div class="form-box" id="admin-form">
+      <div><label>Asset Name</label><input id="name" placeholder="e.g. Pump Station C" /></div>
+      <div>
+        <label>Status</label>
+        <select id="status">
+          <option value="active">active</option>
+          <option value="maintenance">maintenance</option>
+          <option value="inactive">inactive</option>
+        </select>
+      </div>
+      <button onclick="createAsset()">+ Add Asset</button>
+    </div>
+    <div class="msg" id="msg"></div>
+
+    <div class="toolbar">
+      <input id="search" placeholder="🔍 Search by name or status..." oninput="renderTable()" />
+      <button onclick="exportCSV()">⬇ Export CSV</button>
+    </div>
+
+    <table>
+      <thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody id="assets-body"></tbody>
+    </table>
+  </div>
+
+  <script>
+    requireLogin(); applyTheme();
+    let currentAssets=[];
+    const headers=()=>({Authorization:"Bearer "+getToken()});
+    async function api(path,options={}) { options.headers={...(options.headers||{}),...headers()}; const res=await fetch(API+path,options); if(res.status===401){logout();throw new Error("Session expired");} if(!res.ok) throw new Error((await res.json().catch(()=>({}))).detail||"Request failed"); return res.status===204?null:res.json(); }
+
+    async function loadAssets(){ currentAssets=await api("/assets"); renderTable(); }
+    function renderTable(){
+      const query=document.getElementById("search").value.toLowerCase();
+      const filtered=currentAssets.filter(a=>a.name.toLowerCase().includes(query)||a.status.toLowerCase().includes(query));
+      const body=document.getElementById("assets-body"); body.replaceChildren();
+      if(!filtered.length){const tr=document.createElement("tr"),td=document.createElement("td");td.colSpan=4;td.textContent="No matching assets";tr.appendChild(td);body.appendChild(tr);return;}
+      filtered.forEach(a=>{
+        const tr=document.createElement("tr");tr.style.cursor="pointer";tr.addEventListener("click",()=>goTo('/asset-detail?id='+a.id));
+        [a.id,a.name,a.status].forEach(v=>{const td=document.createElement("td");td.textContent=String(v);tr.appendChild(td);});
+        const td=document.createElement("td");
+        if(isAdmin()){
+          const b=document.createElement("button");b.textContent="Edit";b.onclick=e=>{e.stopPropagation();editAsset(a.id,a.name,a.status)};td.appendChild(b);
+          const d=document.createElement("button");d.textContent="Delete";d.style.marginLeft="6px";d.onclick=e=>{e.stopPropagation();deleteAsset(a.id,a.name)};td.appendChild(d);
+        }
+        tr.appendChild(td);body.appendChild(tr);
+      });
+    }
+    async function createAsset(){
+      const name=document.getElementById("name").value.trim(), status=document.getElementById("status").value;
+      if(!name){document.getElementById("msg").textContent="Please enter a name.";return;}
+      try{await api("/assets",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,status})});document.getElementById("msg").textContent="Asset added!";document.getElementById("name").value="";loadAssets();}catch(e){document.getElementById("msg").textContent=e.message;}
+    }
+    async function editAsset(id,currentName,currentStatus){
+      const newName=prompt("Edit asset name:",currentName); if(newName===null)return; const newStatus=prompt("Edit status (active/maintenance/inactive):",currentStatus); if(newStatus===null)return;
+      try{await api(`/assets/${id}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:newName,status:newStatus})});loadAssets();}catch(e){alert(e.message);}
+    }
+    async function deleteAsset(id,name){ if(!confirm(`Delete ${name}? Its telemetry, rules and alerts will also be removed.`))return; try{await api(`/assets/${id}`,{method:"DELETE"});loadAssets();}catch(e){alert(e.message);} }
+    function exportCSV(){
+      const rows=[["ID","Name","Status"],...currentAssets.map(a=>[a.id,a.name,a.status])];
+      const safe=v=>{const s=String(v??"");return /^[=+\-@]/.test(s)?"'"+s:s.replaceAll('"','""')};
+      const csv=rows.map(r=>r.map(v=>`"${safe(v)}"`).join(",")).join("\n"); const blob=new Blob([csv],{type:"text/csv"}); const url=URL.createObjectURL(blob); const link=document.createElement("a");link.href=url;link.download="aquaintel_assets.csv";link.click();URL.revokeObjectURL(url);
+    }
+    document.getElementById("search").addEventListener("input",renderTable);
+    if(!isAdmin()) {document.getElementById("admin-form").style.display="none";document.getElementById("viewer-badge").style.display="block";}
+    validateSession().then(ok=>{if(ok){loadAssets();setInterval(loadAssets,10000);}});
+  </script>
+</body>
+</html>
