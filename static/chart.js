@@ -19,8 +19,8 @@
       if (!c || !ctx) return;
       const dpr = window.devicePixelRatio || 1;
       const rect = c.getBoundingClientRect();
-      const w = Math.max(320, rect.width || c.clientWidth || 640);
-      const h = Math.max(220, rect.height || c.clientHeight || 320);
+      const w = Math.max(320, Math.min(rect.width || c.clientWidth || 640, 1200));
+      const h = 320;
       c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
       ctx.setTransform(dpr,0,0,dpr,0,0);
       ctx.clearRect(0,0,w,h);

@@ -37,8 +37,9 @@
     .simulate-box button.stop { background: #e74c3c; }
     .simulate-box p { margin: 0; color: #7a92ab; font-size: 13px; }
 
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-    .chart-box { background: #12233b; border: 1px solid #1f3a5f; border-radius: 12px; padding: 20px; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; min-width: 0; }
+    .chart-box { background: #12233b; border: 1px solid #1f3a5f; border-radius: 12px; padding: 20px; min-width: 0; overflow: hidden; }
+    .chart-box canvas { display: block; width: 100% !important; height: 320px !important; max-width: 100%; }
     .chart-box h3 { margin: 0 0 15px; color: #4fc3f7; font-size: 15px; }
 
     @media (max-width: 768px) {
