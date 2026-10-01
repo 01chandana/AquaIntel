@@ -6,6 +6,7 @@ import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from typing import Literal
+from services.kpi_service import get_asset_kpis
 
 import numpy as np
 
@@ -445,7 +446,6 @@ app.mount(
 # ============================================================
 # Assets
 # ============================================================
-
 @app.get("/assets")
 def get_assets(current_user=Depends(get_current_user)):
     db = SessionLocal()
@@ -457,6 +457,42 @@ def get_assets(current_user=Depends(get_current_user)):
             .order_by(models.Asset.id)
             .all()
         ]
+
+    finally:
+        db.close()
+
+
+@app.get("/assets/{asset_id}/kpis")
+def get_kpis(
+    asset_id: int,
+    hours: int = Query(
+        default=24,
+        ge=1,
+        le=168,
+    ),
+    current_user=Depends(get_current_user),
+):
+    db = SessionLocal()
+
+    try:
+        try:
+            return get_asset_kpis(
+                db=db,
+                asset_id=asset_id,
+                hours=hours,
+            )
+
+        except ValueError as exc:
+            if str(exc) == "Asset not found":
+                raise HTTPException(
+                    status_code=404,
+                    detail=str(exc),
+                )
+
+            raise HTTPException(
+                status_code=400,
+                detail=str(exc),
+            )
 
     finally:
         db.close()
@@ -477,6 +513,7 @@ def get_asset_detail(
     ),
     current_user=Depends(get_current_user),
 ):
+
     db = SessionLocal()
 
     try:
@@ -613,6 +650,7 @@ def delete_asset(
 
     finally:
         db.close()
+
 
 
 # ============================================================
@@ -1497,3 +1535,5 @@ def login(
 
     finally:
         db.close()
+
+    
