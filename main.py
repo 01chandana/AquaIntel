@@ -400,6 +400,15 @@ def read_root():
     }
 
 
+@app.get("/health")
+def health():
+    return {
+        "status": "healthy",
+        "service": "AquaIntel API",
+        "version": "2.0.0",
+    }
+
+
 @app.get("/dashboard", include_in_schema=False)
 def dashboard():
     return page("dashboard.html")
