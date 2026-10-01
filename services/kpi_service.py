@@ -3,7 +3,7 @@ from math import isfinite
 
 from sqlalchemy.orm import Session
 
-from models import Asset, Telemetry
+from models import Alert, Asset, Telemetry
 
 
 def _window_start(hours: int) -> datetime:
@@ -77,6 +77,11 @@ def get_asset_kpis(
             [],
         ).append(reading.value)
 
+    alert_query = db.query(Alert).filter(Alert.asset_id == asset_id, Alert.triggered_at >= _window_start(hours))
+    alert_count = alert_query.count()
+    active_alert_count = alert_query.filter(Alert.acknowledged.is_(False)).count()
+    acknowledged_alert_count = alert_query.filter(Alert.acknowledged.is_(True)).count()
+
     by_reading_type = {
         reading_type: _calculate_statistics(type_values)
         for reading_type, type_values in sorted(
@@ -95,5 +100,8 @@ def get_asset_kpis(
         "average_value": overall["average"],
         "minimum_value": overall["minimum"],
         "maximum_value": overall["maximum"],
+        "alert_count": alert_count,
+        "active_alert_count": active_alert_count,
+        "acknowledged_alert_count": acknowledged_alert_count,
         "by_reading_type": by_reading_type,
     }
